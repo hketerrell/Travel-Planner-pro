@@ -1172,29 +1172,75 @@ function TripOverview({trip,user,profiles,siteCfg,th,t,onUpdate}:{trip:Trip;user
 function TripTravelers({trip,profiles,th,t}:{trip:Trip;profiles:Profile[];th:ThemeMode;t:(k:TKey)=>string}){
   const members=trip.members.map(id=>profiles.find(profile=>profile.id===id)).filter(Boolean) as Profile[];
 
-  return <div className="grid xl:grid-cols-2 gap-5">
-    {members.map(member=><Card key={member.id} th={th} className="p-7 space-y-5">
-      <div className="flex items-center gap-4">
-        <Avatar name={dn(member)} th={th}/>
-        <div>
-          <p className="text-xl font-semibold">{dn(member)}</p>
-          <p className={cx("text-sm",th==="dark"?"text-slate-400":"text-slate-500")}>@{member.accountName}{member.id===trip.ownerId?` · ${t("owner")}`:""}</p>
+  const memberStats=members.map(member=>{
+    const assigned=trip.packingList.filter(item=>item.assignedTo===dn(member));
+    const packed=assigned.filter(item=>item.packed).length;
+    const paid=trip.expenses.filter(exp=>exp.paidBy===member.id).reduce((sum,exp)=>sum+exp.amount,0);
+    const expenseTouches=trip.expenses.filter(exp=>exp.participants.includes(member.id) || exp.paidBy===member.id).length;
+    return {member,assigned:assigned.length,packed,paid,expenseTouches};
+  });
+
+  return <div className="space-y-5">
+    <Card th={th} className="p-6 h-fit lg:sticky lg:top-6">
+      <div className="grid sm:grid-cols-3 gap-3">
+        <div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
+          <p className={cx("text-xs uppercase tracking-[0.16em]",th==="dark"?"text-slate-400":"text-slate-500")}>{t("members")}</p>
+          <p className="mt-2 text-2xl font-bold">{members.length}</p>
+        </div>
+        <div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
+          <p className={cx("text-xs uppercase tracking-[0.16em]",th==="dark"?"text-slate-400":"text-slate-500")}>{t("expenses")}</p>
+          <p className="mt-2 text-2xl font-bold">{trip.expenses.length}</p>
+        </div>
+        <div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
+          <p className={cx("text-xs uppercase tracking-[0.16em]",th==="dark"?"text-slate-400":"text-slate-500")}>{t("luggage")}</p>
+          <p className="mt-2 text-2xl font-bold">{trip.packingList.length}</p>
         </div>
       </div>
-      <div className="grid gap-2">
-        <InfoRow label={t("email")} value={member.email} th={th}/>
-        <InfoRow label={t("phone")} value={member.phone} th={th}/>
-        {member.nationality&&<InfoRow label={t("nationality")} value={member.nationality} th={th}/>}
-        {member.passportNumber&&<InfoRow label={t("passport")} value={member.passportNumber} th={th}/>} 
-        {member.passportExpiryDate&&<InfoRow label={t("passportExpiry")} value={fmtDate(member.passportExpiryDate)} th={th}/>} 
-        {member.homeAirport&&<InfoRow label={t("homeAirport")} value={member.homeAirport} th={th}/>}
-        {member.emergencyContact&&<InfoRow label={t("emergencyContact")} value={member.emergencyContact} th={th}/>}
-      </div>
-      {member.dietaryNotes&&<div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04] text-slate-300":"bg-slate-100 text-slate-700")}>
-        <p className={cx("text-sm mb-2",th==="dark"?"text-slate-400":"text-slate-500")}>{t("dietaryNotes")}</p>
-        <p className="whitespace-pre-wrap">{member.dietaryNotes}</p>
-      </div>}
-    </Card>)}
+    </Card>
+
+    <div className="grid xl:grid-cols-2 gap-5">
+      {memberStats.map(({member,assigned,packed,paid,expenseTouches})=><Card key={member.id} th={th} className="p-7 space-y-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <Avatar name={dn(member)} th={th}/>
+            <div>
+              <p className="text-xl font-semibold">{dn(member)}</p>
+              <p className={cx("text-sm",th==="dark"?"text-slate-400":"text-slate-500")}>@{member.accountName}</p>
+            </div>
+          </div>
+          <Badge label={member.id===trip.ownerId?t("owner"):t("travelers")} th={th} color={member.id===trip.ownerId?"purple":"blue"}/>
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-2">
+          <div className={cx("rounded-2xl p-3",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
+            <p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("packed")}</p>
+            <p className="mt-1 font-semibold">{packed}/{assigned||0}</p>
+          </div>
+          <div className={cx("rounded-2xl p-3",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
+            <p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("totalPaid")}</p>
+            <p className="mt-1 font-semibold">{fmtCur(paid)}</p>
+          </div>
+          <div className={cx("rounded-2xl p-3",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
+            <p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("expenses")}</p>
+            <p className="mt-1 font-semibold">{expenseTouches}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <InfoRow label={t("email")} value={member.email} th={th}/>
+          <InfoRow label={t("phone")} value={member.phone} th={th}/>
+          {member.nationality&&<InfoRow label={t("nationality")} value={member.nationality} th={th}/>} 
+          {member.passportNumber&&<InfoRow label={t("passport")} value={member.passportNumber} th={th}/>} 
+          {member.passportExpiryDate&&<InfoRow label={t("passportExpiry")} value={fmtDate(member.passportExpiryDate)} th={th}/>} 
+          {member.homeAirport&&<InfoRow label={t("homeAirport")} value={member.homeAirport} th={th}/>} 
+          {member.emergencyContact&&<InfoRow label={t("emergencyContact")} value={member.emergencyContact} th={th}/>} 
+        </div>
+        {member.dietaryNotes&&<div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04] text-slate-300":"bg-slate-100 text-slate-700")}>
+          <p className={cx("text-sm mb-2",th==="dark"?"text-slate-400":"text-slate-500")}>{t("dietaryNotes")}</p>
+          <p className="whitespace-pre-wrap">{member.dietaryNotes}</p>
+        </div>}
+      </Card>)}
+    </div>
   </div>;
 }
 
@@ -1208,6 +1254,8 @@ function TripItinerary({trip,th,t,onUpdate}:{trip:Trip;th:ThemeMode;t:(k:TKey)=>
 
   const dayItems=trip.itinerary.filter(it=>it.day===day).sort((a,b)=>a.order-b.order);
   const nextOrder=(trip.itinerary.filter(it=>it.day===day).reduce((max,it)=>Math.max(max,it.order),0))+1;
+  const totalItems=trip.itinerary.length;
+  const photoCount=trip.itinerary.filter(it=>Boolean(it.photo)).length;
 
   const saveActivity=(e:React.FormEvent)=>{
     e.preventDefault();
@@ -1269,8 +1317,15 @@ function TripItinerary({trip,th,t,onUpdate}:{trip:Trip;th:ThemeMode;t:(k:TKey)=>
     e.target.value="";
   };
 
-  return <div className="grid gap-6 lg:grid-cols-3">
-    <div className="lg:col-span-2">
+  return <div className="grid gap-6 lg:grid-cols-[1.45fr_.95fr]">
+    <div className="space-y-5">
+      <Card th={th} className="p-5">
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}><p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("itinerary")}</p><p className="mt-1 text-2xl font-bold">{totalItems}</p></div>
+          <div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}><p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("day")}</p><p className="mt-1 text-2xl font-bold">{day}/{trip.duration}</p></div>
+          <div className={cx("rounded-2xl p-4",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}><p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("itineraryPhoto")}</p><p className="mt-1 text-2xl font-bold">{photoCount}</p></div>
+        </div>
+      </Card>
       <Card th={th} className="p-8">
         <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2">
           {Array.from({length:trip.duration},(_,i)=>i+1).map(d=><button key={d} onClick={()=>setDay(d)}
@@ -1281,9 +1336,10 @@ function TripItinerary({trip,th,t,onUpdate}:{trip:Trip;th:ThemeMode;t:(k:TKey)=>
           </button>)}
         </div>
         {dayItems.length===0?<Empty icon="🗓️" title={t("noItinerary")} desc={t("noItineraryDesc")} th={th}/>
-        :<div className="space-y-4">
-          {dayItems.map((it,idx)=><div key={it.id} className="space-y-3">
-            <Card th={th} className="p-5">
+        :<div className="space-y-5">
+          {dayItems.map((it,idx)=><div key={it.id} className="space-y-3 relative">
+            {idx<dayItems.length-1&&<span className={cx("absolute left-[18px] top-14 h-[calc(100%-1.2rem)] w-px",th==="dark"?"bg-white/10":"bg-slate-200")}/>}
+            <Card th={th} className="p-5 rounded-3xl">
               <div className="flex items-start gap-4">
                 <div className="flex flex-col gap-1">
                   <button onClick={()=>move(idx,-1)} disabled={idx===0} className="text-lg opacity-60 hover:opacity-100 disabled:opacity-20">▲</button>
@@ -1337,7 +1393,7 @@ function TripItinerary({trip,th,t,onUpdate}:{trip:Trip;th:ThemeMode;t:(k:TKey)=>
       </Card>
     </div>
 
-    <Card th={th} className="p-6">
+    <Card th={th} className="p-6 h-fit lg:sticky lg:top-6">
       <h3 className="mb-4 text-xl font-bold">{editId?t("edit"):t("addActivity")}</h3>
       <form onSubmit={saveActivity} className="space-y-3">
         <Input th={th} label={t("time")} type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))}/>
@@ -1741,7 +1797,7 @@ function TripSettings({trip,isOwner,th,t,onUpdate}:{trip:Trip;isOwner:boolean;th
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <Input th={th} label={t("airline")} value={leg.airline} onChange={e=>updateLeg(leg.id,{airline:e.target.value})}/>
-              <Input th={th} label={t("flightNumber")} value={leg.flightNumber} onChange={e=>updateLeg(leg.id,{flightNumber:e.target.value})}/>
+              <Input th={th} label={t("flightNumber")} value={leg.flightNumber} onChange={e=>updateLeg(leg.id,{flightNumber:e.target.value})} onBlur={()=>autofillFlight(leg)}/>
               <Input th={th} label={t("departureAirport")} value={leg.departureAirport} onChange={e=>updateLeg(leg.id,{departureAirport:e.target.value})}/>
               <Input th={th} label={t("arrivalAirport")} value={leg.arrivalAirport} onChange={e=>updateLeg(leg.id,{arrivalAirport:e.target.value})}/>
               <Input th={th} label={t("departureTime")} type="datetime-local" value={leg.departureTime} onChange={e=>updateLeg(leg.id,{departureTime:e.target.value})}/>
