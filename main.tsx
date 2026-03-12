@@ -404,13 +404,12 @@ function meetsPasswordPolicy(password:string){
   return password.length>3 && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 }
 
-function suggestFlightLeg(flightNumber:string,date?:string){
+function suggestFlightLeg(flightNumber:string,date:string){
   const normalized=flightNumber.replace(/\s+/g,"").toUpperCase();
   const hit=FLIGHT_AUTO_DATA[normalized];
   if(!hit)return null;
-  const datePart=(date||"").slice(0,10);
-  const depart=datePart?`${datePart}T${hit.departureClock}`:"";
-  const arrive=datePart?`${datePart}T${hit.arrivalClock}`:"";
+  const depart=date?`${date}T${hit.departureClock}`:"";
+  const arrive=date?`${date}T${hit.arrivalClock}`:"";
   return { airline:hit.airline, departureAirport:hit.departureAirport, arrivalAirport:hit.arrivalAirport, departureTime:depart, arrivalTime:arrive, terminal:hit.terminal };
 }
 
@@ -1749,8 +1748,9 @@ function TripSettings({trip,isOwner,th,t,onUpdate}:{trip:Trip;isOwner:boolean;th
   const removeHotel=(hotelId:string)=>setForm(f=>({...f,hotels:f.hotels.filter(hotel=>hotel.id!==hotelId)}));
 
   const autofillFlight=(leg:FlightLeg)=>{
-    if(!leg.flightNumber.trim()){setFlightMessage(t("flightNumberRequired"));return;}
-    const suggestion=suggestFlightLeg(leg.flightNumber,leg.departureTime);
+    const flightDate=(leg.departureTime||"").slice(0,10);
+    if(!leg.flightNumber.trim()||!flightDate){setFlightMessage(t("flightSearchHint"));return;}
+    const suggestion=suggestFlightLeg(leg.flightNumber,flightDate);
     if(!suggestion){setFlightMessage(t("autoFillNoMatch"));return;}
     updateLeg(leg.id,suggestion);
     setFlightMessage(t("flightAutoFilled"));
@@ -1781,7 +1781,7 @@ function TripSettings({trip,isOwner,th,t,onUpdate}:{trip:Trip;isOwner:boolean;th
           <Btn th={th} v="sec" type="button" onClick={addLeg}>+ {t("addLeg")}</Btn>
         </div>
         {form.flightLegs.length===0&&<p className={cx("text-sm",th==="dark"?"text-slate-400":"text-slate-500")}>{t("noFlightDetails")}</p>}
-        <p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("flightSearchByNumberHint")}</p>
+        <p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("flightSearchHint")}</p>
         {flightMessage&&<p className={cx("text-sm",th==="dark"?"text-cyan-300":"text-blue-700")}>{flightMessage}</p>}
         <div className="space-y-4">
           {form.flightLegs.map((leg,index)=><div key={leg.id} className={cx("rounded-3xl border p-5 space-y-4",th==="dark"?"border-white/8 bg-white/[0.03]":"border-slate-200 bg-slate-50")}>
