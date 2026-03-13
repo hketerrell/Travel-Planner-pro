@@ -50,7 +50,7 @@ const en = {
   overview: "Overview", itinerary: "Itinerary", expenses: "Expenses",
   luggage: "Luggage", settings: "Settings", travelers: "Travellers",
 
-  dates: "Dates", flightDetails: "Flight Details", hotelDetails: "Hotel Details",
+  dates: "Dates", flightDetails: "Flight Details", hotelDetails: "Hotel Details", departureDate: "Departure Date", arrivalDate: "Arrival Date",
   noFlightDetails: "Flight details not added yet", noHotelDetails: "Hotel details not added yet",
   noWeatherLocation: "No weather location set yet",
   useDestination: "Use Destination",
@@ -180,7 +180,7 @@ const zh: typeof en = {
   overview: "概覽", itinerary: "行程", expenses: "開支",
   luggage: "行李", settings: "設定", travelers: "旅客",
 
-  dates: "日期", flightDetails: "航班資料", hotelDetails: "飯店資料",
+  dates: "日期", flightDetails: "航班資料", hotelDetails: "飯店資料", departureDate: "出發日期", arrivalDate: "到達日期",
   noFlightDetails: "尚未新增航班資料", noHotelDetails: "尚未新增飯店資料",
   noWeatherLocation: "尚未設定天氣位置",
   useDestination: "使用目的地",
