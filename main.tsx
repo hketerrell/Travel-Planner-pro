@@ -41,7 +41,7 @@ type LuggageCategory = { id: string; name: string; defaultItems: string[]; };
 type FlightLeg = {
   id: string; airline: string; flightNumber: string; departureAirport: string; arrivalAirport: string;
   departureTime: string; arrivalTime: string; terminal: string; bookingReference: string;
-  seat: string; baggage: string; notes: string;
+  notes: string;
 };
 
 type HotelStay = {
@@ -191,7 +191,7 @@ function normTrip(i:unknown):Trip{
       ? [{
           id: uid("flt"), airline: t.airline ?? "", flightNumber: t.flightNumber ?? "", departureAirport: t.departureAirport ?? "",
           arrivalAirport: t.arrivalAirport ?? "", departureTime: t.departureTime ?? "", arrivalTime: t.arrivalTime ?? "",
-          terminal: t.terminal ?? "", bookingReference: t.bookingReference ?? "", seat: "", baggage: "", notes: "",
+          terminal: t.terminal ?? "", bookingReference: t.bookingReference ?? "", notes: "",
         }]
       : [];
   const hotels = Array.isArray(t.hotels) && t.hotels.length > 0
@@ -211,7 +211,7 @@ function normTrip(i:unknown):Trip{
     flightLegs: flightLegs.map((leg, index) => ({
       id: leg.id ?? uid(`flt-${index}`), airline: leg.airline ?? "", flightNumber: leg.flightNumber ?? "", departureAirport: leg.departureAirport ?? "",
       arrivalAirport: leg.arrivalAirport ?? "", departureTime: leg.departureTime ?? "", arrivalTime: leg.arrivalTime ?? "", terminal: leg.terminal ?? "",
-      bookingReference: leg.bookingReference ?? "", seat: leg.seat ?? "", baggage: leg.baggage ?? "", notes: leg.notes ?? "",
+      bookingReference: leg.bookingReference ?? "", notes: leg.notes ?? "",
     })),
     hotels: hotels.map((hotel, index) => ({
       id: hotel.id ?? uid(`htl-${index}`), hotelName: hotel.hotelName ?? "", hotelAddress: hotel.hotelAddress ?? "", roomType: hotel.roomType ?? "",
@@ -265,8 +265,8 @@ function tripFlightSummary(trip:Trip){
   if (trip.flightLegs.length > 0) {
     const firstLeg = trip.flightLegs[0];
     return [
-      trip.flightLegs.length > 1 ? `${trip.flightLegs.length} legs` : "1 leg",
-      [firstLeg.airline, firstLeg.flightNumber].filter(Boolean).join(" "),
+      trip.flightLegs.map(leg=>leg.flightNumber).filter(Boolean).join(", ") || (trip.flightLegs.length > 1 ? `${trip.flightLegs.length} legs` : "1 leg"),
+      [firstLeg.airline].filter(Boolean).join(" "),
       firstLeg.departureAirport && firstLeg.arrivalAirport ? `${firstLeg.departureAirport} -> ${firstLeg.arrivalAirport}` : "",
     ].filter(Boolean);
   }
@@ -404,7 +404,7 @@ function isFourDigitCode(v:string){
   return /^\d{4}$/.test(v.trim());
 }
 
-async function searchFlightByNumber(siteCfg:SiteSettings,flightNumber:string,date?:string){
+async function searchFlightByNumber(siteCfg:SiteSettings,flightNumber:string){
   const normalized=flightNumber.replace(/\s+/g,"").toUpperCase();
   if(!normalized)return null;
   try{
@@ -413,16 +413,81 @@ async function searchFlightByNumber(siteCfg:SiteSettings,flightNumber:string,dat
     const data=await resp.json();
     const route=data?.response?.flightroute;
     if(!route)return null;
-    const datePart=(date||"").slice(0,10);
     return {
       airline: route.airline?.name ?? "",
       departureAirport: route.origin?.iata_code ?? route.origin?.icao_code ?? "",
       arrivalAirport: route.destination?.iata_code ?? route.destination?.icao_code ?? "",
-      departureTime: datePart?`${datePart}T09:00`:"",
-      arrivalTime: datePart?`${datePart}T12:00`:"",
+      departureTime: "",
+      arrivalTime: "",
       terminal: "",
     };
   }catch{return null;}
+}
+
+
+
+function toDateInput(v:string){
+  return v.includes("T") ? v.slice(0,10) : v;
+}
+
+function toTimeInput(v:string){
+  if(!v.includes("T")) return "";
+  return v.slice(11,16);
+}
+
+function combineDateTime(date:string,time:string){
+  if(!date) return "";
+  return time ? `${date}T${time}` : date;
+}
+
+function addFlightLegsToItinerary(base:ItineraryItem[], flightLegs:FlightLeg[], tripStartDate:string){
+  const nonFlightItems=base.filter(item=>!(item.transport==="Flight"&&item.id.startsWith("flt-itin-")));
+  const dayFromDateTime=(dateTime:string)=>{
+    if(!tripStartDate||!dateTime) return 1;
+    const dateOnly=toDateInput(dateTime);
+    if(!dateOnly) return 1;
+    const start=new Date(`${tripStartDate}T00:00:00`);
+    const current=new Date(`${dateOnly}T00:00:00`);
+    if(Number.isNaN(start.getTime())||Number.isNaN(current.getTime())) return 1;
+    const diff=Math.floor((current.getTime()-start.getTime())/(1000*60*60*24));
+    return Math.max(1,diff+1);
+  };
+  const generated=flightLegs.map((leg,index)=>{
+    const dep=leg.departureAirport||"—";
+    const arr=leg.arrivalAirport||"—";
+    const flightLabel=[leg.airline,leg.flightNumber].filter(Boolean).join(" ")||`Flight ${index+1}`;
+    const when=toTimeInput(leg.departureTime)||"";
+    return {
+      id:`flt-itin-${leg.id}`,
+      day: dayFromDateTime(leg.departureTime || leg.arrivalTime),
+      order: 0,
+      time:when,
+      title:flightLabel,
+      stopLocation:`${dep} -> ${arr}`,
+      transport:"Flight",
+      details:[
+        leg.departureTime?`Departure: ${fmtDate(leg.departureTime)}`:"",
+        leg.arrivalTime?`Arrival: ${fmtDate(leg.arrivalTime)}`:"",
+        leg.terminal?`Terminal: ${leg.terminal}`:"",
+        leg.bookingReference?`Booking: ${leg.bookingReference}`:"",
+      ].filter(Boolean).join(" • "),
+      photo:"",
+      transitToNext:{duration:"",details:""},
+    } as ItineraryItem;
+  });
+  const combined=[...nonFlightItems,...generated];
+  const byDay=new Map<number,ItineraryItem[]>();
+  for(const item of combined){
+    const key=item.day||1;
+    const list=byDay.get(key)??[];
+    list.push(item);
+    byDay.set(key,list);
+  }
+  return [...combined].map(item=>{
+    const sameDay=(byDay.get(item.day||1)??[]).slice().sort((a,b)=>a.time.localeCompare(b.time)||a.title.localeCompare(b.title));
+    const idx=sameDay.findIndex(x=>x.id===item.id);
+    return {...item,order:idx>=0?idx+1:item.order};
+  });
 }
 
 async function searchHotelByQuery(siteCfg:SiteSettings,hotelName:string,location:string){
@@ -957,7 +1022,7 @@ function TripOverview({trip,user,profiles,siteCfg,th,t,onUpdate}:{trip:Trip;user
   const memberProfiles=trip.members.map(id=>profiles.find(profile=>profile.id===id)).filter(Boolean) as Profile[];
   const flightLegs=trip.flightLegs.length>0?trip.flightLegs:[{
     id:"legacy-flight",airline:trip.airline,flightNumber:trip.flightNumber,departureAirport:trip.departureAirport,arrivalAirport:trip.arrivalAirport,
-    departureTime:trip.departureTime,arrivalTime:trip.arrivalTime,terminal:trip.terminal,bookingReference:trip.bookingReference,seat:"",baggage:"",notes:"",
+    departureTime:trip.departureTime,arrivalTime:trip.arrivalTime,terminal:trip.terminal,bookingReference:trip.bookingReference,notes:"",
   }].filter(leg=>Object.values(leg).some(Boolean));
   const hotels=trip.hotels.length>0?trip.hotels:[{
     id:"legacy-hotel",hotelName:trip.hotelName,hotelAddress:trip.hotelAddress,roomType:trip.roomType,checkIn:trip.checkIn,checkOut:trip.checkOut,confirmationCode:trip.confirmationCode,contact:"",notes:"",
@@ -1031,7 +1096,7 @@ function TripOverview({trip,user,profiles,siteCfg,th,t,onUpdate}:{trip:Trip;user
               </div>
               <div className={cx("rounded-3xl p-5",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
                 <p className={cx("text-sm",th==="dark"?"text-slate-400":"text-slate-500")}>{t("flightDetails")}</p>
-                <p className="mt-2 text-lg font-semibold">{flightLegs.length || 0} {flightLegs.length===1?t("flightDetails"):t("flightLegs")}</p>
+                <p className="mt-2 text-lg font-semibold">{flightLegs.map(leg=>leg.flightNumber).filter(Boolean).join(", ") || "—"}</p>
               </div>
               <div className={cx("rounded-3xl p-5",th==="dark"?"bg-white/[0.04]":"bg-slate-100")}>
                 <p className={cx("text-sm",th==="dark"?"text-slate-400":"text-slate-500")}>{t("hotelDetails")}</p>
@@ -1074,18 +1139,16 @@ function TripOverview({trip,user,profiles,siteCfg,th,t,onUpdate}:{trip:Trip;user
           :<div className="space-y-5">{flightLegs.map((leg,index)=><div key={leg.id} className={cx("rounded-[1.75rem] border p-6",th==="dark"?"border-white/8 bg-white/[0.03]":"border-slate-200 bg-slate-50")}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-2xl font-bold">{leg.departureAirport || "-"}{" -> "}{leg.arrivalAirport || "-"}</p>
-                <p className={cx("mt-2 text-base",th==="dark"?"text-slate-300":"text-slate-600")}>{[leg.airline, leg.flightNumber].filter(Boolean).join(" ") || `${t("flightDetails")} ${index+1}`}</p>
+                <p className="text-2xl font-bold">{[leg.airline, leg.flightNumber].filter(Boolean).join(" ") || `${t("flightDetails")} ${index+1}`}</p>
+                <p className={cx("mt-2 text-base",th==="dark"?"text-slate-300":"text-slate-600")}>{leg.departureAirport || "-"}{" -> "}{leg.arrivalAirport || "-"}</p>
               </div>
               <Badge label={`${t("flightDetails")} ${index+1}`} th={th} color="blue"/>
             </div>
-            <div className="mt-5 grid md:grid-cols-3 gap-3 text-sm">
+            <div className="mt-5 grid md:grid-cols-2 gap-3 text-sm">
               <InfoRow label={t("departureTime")} value={leg.departureTime ? fmtDate(leg.departureTime) : "—"} th={th}/>
               <InfoRow label={t("arrivalTime")} value={leg.arrivalTime ? fmtDate(leg.arrivalTime) : "—"} th={th}/>
               <InfoRow label={t("terminal")} value={leg.terminal || "—"} th={th}/>
               <InfoRow label={t("bookingReference")} value={leg.bookingReference || "—"} th={th}/>
-              <InfoRow label={t("seat")} value={leg.seat || "—"} th={th}/>
-              <InfoRow label={t("baggageAllowance")} value={leg.baggage || "—"} th={th}/>
             </div>
             {leg.notes&&<p className={cx("mt-4 text-sm leading-6",th==="dark"?"text-slate-300":"text-slate-600")}>{leg.notes}</p>}
           </div>)}</div>}
@@ -1766,8 +1829,10 @@ function TripSettings({trip,isOwner,siteCfg,th,t,onUpdate}:{trip:Trip;isOwner:bo
     const shouldKeepCustom=Boolean(form.customLocation?.name?.trim()) && Number.isFinite(form.customLocation?.lat) && Number.isFinite(form.customLocation?.lon) && !(form.customLocation?.lat===0 && form.customLocation?.lon===0 && !form.customLocation?.name.trim());
     const firstLeg=form.flightLegs[0];
     const firstHotel=form.hotels[0];
+    const itineraryWithFlights=addFlightLegsToItinerary(form.itinerary,form.flightLegs,form.startDate);
     onUpdate(trip.id,{
       ...form,
+      itinerary: itineraryWithFlights,
       customLocation:shouldKeepCustom?form.customLocation:undefined,
       airline:firstLeg?.airline??"", flightNumber:firstLeg?.flightNumber??"", departureAirport:firstLeg?.departureAirport??"", arrivalAirport:firstLeg?.arrivalAirport??"",
       departureTime:firstLeg?.departureTime??"", arrivalTime:firstLeg?.arrivalTime??"", terminal:firstLeg?.terminal??"", bookingReference:firstLeg?.bookingReference??"",
@@ -1790,7 +1855,18 @@ function TripSettings({trip,isOwner,siteCfg,th,t,onUpdate}:{trip:Trip;isOwner:bo
   };
 
   const updateLeg=(legId:string,patch:Partial<FlightLeg>)=>setForm(f=>({...f,flightLegs:f.flightLegs.map(leg=>leg.id===legId?{...leg,...patch}:leg)}));
-  const addLeg=()=>setForm(f=>({...f,flightLegs:[...f.flightLegs,{id:uid("flt"),airline:"",flightNumber:"",departureAirport:"",arrivalAirport:"",departureTime:"",arrivalTime:"",terminal:"",bookingReference:"",seat:"",baggage:"",notes:""}]}));
+  const addLeg=async()=>{
+    const leg={id:uid("flt"),airline:"",flightNumber:quickFlightNumber.trim(),departureAirport:"",arrivalAirport:"",departureTime:"",arrivalTime:"",terminal:"",bookingReference:"",notes:""};
+    setForm(f=>({...f,flightLegs:[...f.flightLegs,leg]}));
+    if(!quickFlightNumber.trim())return;
+    setFlightSearchingId(leg.id);
+    try{
+      const suggestion=await searchFlightByNumber(siteCfg,quickFlightNumber);
+      if(!suggestion){setFlightMessage(t("autoFillNoMatch"));return;}
+      updateLeg(leg.id,{...suggestion,flightNumber:quickFlightNumber.trim()});
+      setFlightMessage(t("flightAutoFilled"));
+    }finally{setFlightSearchingId(null);}
+  };
   const removeLeg=(legId:string)=>setForm(f=>({...f,flightLegs:f.flightLegs.filter(leg=>leg.id!==legId)}));
   const updateHotel=(hotelId:string,patch:Partial<HotelStay>)=>setForm(f=>({...f,hotels:f.hotels.map(hotel=>hotel.id===hotelId?{...hotel,...patch}:hotel)}));
   const addHotel=()=>setForm(f=>({...f,hotels:[...f.hotels,{id:uid("htl"),hotelName:"",hotelAddress:"",roomType:"",checkIn:"",checkOut:"",confirmationCode:"",contact:"",notes:""}]}));
@@ -1798,7 +1874,7 @@ function TripSettings({trip,isOwner,siteCfg,th,t,onUpdate}:{trip:Trip;isOwner:bo
 
   const ensureFirstLeg=()=>{
     if(form.flightLegs.length>0)return form.flightLegs[0];
-    const created={id:uid("flt"),airline:"",flightNumber:"",departureAirport:"",arrivalAirport:"",departureTime:"",arrivalTime:"",terminal:"",bookingReference:"",seat:"",baggage:"",notes:""};
+    const created={id:uid("flt"),airline:"",flightNumber:quickFlightNumber.trim(),departureAirport:"",arrivalAirport:"",departureTime:"",arrivalTime:"",terminal:"",bookingReference:"",notes:""};
     setForm(f=>({...f,flightLegs:[created,...f.flightLegs]}));
     return created;
   };
@@ -1812,10 +1888,10 @@ function TripSettings({trip,isOwner,siteCfg,th,t,onUpdate}:{trip:Trip;isOwner:bo
 
   const quickSearchFlight=async()=>{
     if(!quickFlightNumber.trim()){setFlightMessage(t("flightNumberRequired"));return;}
-    const target=ensureFirstLeg();
+    const target=form.flightLegs.length>0?form.flightLegs[form.flightLegs.length-1]:ensureFirstLeg();
     setFlightSearchingId(target.id);
     try{
-      const suggestion=await searchFlightByNumber(siteCfg,quickFlightNumber,target.departureTime);
+      const suggestion=await searchFlightByNumber(siteCfg,quickFlightNumber);
       if(!suggestion){setFlightMessage(t("autoFillNoMatch"));return;}
       updateLeg(target.id,{...suggestion,flightNumber:quickFlightNumber.trim()});
       setFlightMessage(t("flightAutoFilled"));
@@ -1839,7 +1915,7 @@ function TripSettings({trip,isOwner,siteCfg,th,t,onUpdate}:{trip:Trip;isOwner:bo
     if(!leg.flightNumber.trim()){setFlightMessage(t("flightNumberRequired"));return;}
     setFlightSearchingId(leg.id);
     try{
-      const suggestion=await searchFlightByNumber(siteCfg,leg.flightNumber,leg.departureTime);
+      const suggestion=await searchFlightByNumber(siteCfg,leg.flightNumber);
       if(!suggestion){setFlightMessage(t("autoFillNoMatch"));return;}
       updateLeg(leg.id,suggestion);
       setFlightMessage(t("flightAutoFilled"));
@@ -1890,7 +1966,7 @@ function TripSettings({trip,isOwner,siteCfg,th,t,onUpdate}:{trip:Trip;isOwner:bo
       <Card th={th} className="p-6 space-y-4">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-xl font-semibold">{t("flightLegs")}</h3>
-          <Btn th={th} v="sec" type="button" onClick={addLeg}>+ {t("addLeg")}</Btn>
+          <Btn th={th} v="sec" type="button" onClick={()=>void addLeg()}>+ {t("addLeg")}</Btn>
         </div>
         {form.flightLegs.length===0&&<p className={cx("text-sm",th==="dark"?"text-slate-400":"text-slate-500")}>{t("noFlightDetails")}</p>}
         <p className={cx("text-xs",th==="dark"?"text-slate-400":"text-slate-500")}>{t("flightSearchByNumberHint")}</p>
@@ -1912,14 +1988,14 @@ function TripSettings({trip,isOwner,siteCfg,th,t,onUpdate}:{trip:Trip;isOwner:bo
               <Input th={th} label={t("flightNumber")} value={leg.flightNumber} onChange={e=>updateLeg(leg.id,{flightNumber:e.target.value})} onBlur={()=>void autofillFlight(leg)}/>
               <Input th={th} label={t("departureAirport")} value={leg.departureAirport} onChange={e=>updateLeg(leg.id,{departureAirport:e.target.value})}/>
               <Input th={th} label={t("arrivalAirport")} value={leg.arrivalAirport} onChange={e=>updateLeg(leg.id,{arrivalAirport:e.target.value})}/>
-              <Input th={th} label={t("departureTime")} type="datetime-local" value={leg.departureTime} onChange={e=>updateLeg(leg.id,{departureTime:e.target.value})}/>
-              <Input th={th} label={t("arrivalTime")} type="datetime-local" value={leg.arrivalTime} onChange={e=>updateLeg(leg.id,{arrivalTime:e.target.value})}/>
+              <Input th={th} label={t("departureDate")} type="date" value={toDateInput(leg.departureTime)} onChange={e=>updateLeg(leg.id,{departureTime:combineDateTime(e.target.value,toTimeInput(leg.departureTime))})}/>
+              <Input th={th} label={t("departureTime")} type="time" value={toTimeInput(leg.departureTime)} onChange={e=>updateLeg(leg.id,{departureTime:combineDateTime(toDateInput(leg.departureTime),e.target.value)})}/>
+              <Input th={th} label={t("arrivalDate")} type="date" value={toDateInput(leg.arrivalTime)} onChange={e=>updateLeg(leg.id,{arrivalTime:combineDateTime(e.target.value,toTimeInput(leg.arrivalTime))})}/>
+              <Input th={th} label={t("arrivalTime")} type="time" value={toTimeInput(leg.arrivalTime)} onChange={e=>updateLeg(leg.id,{arrivalTime:combineDateTime(toDateInput(leg.arrivalTime),e.target.value)})}/>
               <Input th={th} label={t("terminal")} value={leg.terminal} onChange={e=>updateLeg(leg.id,{terminal:e.target.value})}/>
               <Input th={th} label={t("bookingReference")} value={leg.bookingReference} onChange={e=>updateLeg(leg.id,{bookingReference:e.target.value})}/>
-              <Input th={th} label={t("seat")} value={leg.seat} onChange={e=>updateLeg(leg.id,{seat:e.target.value})}/>
-              <Input th={th} label={t("baggageAllowance")} value={leg.baggage} onChange={e=>updateLeg(leg.id,{baggage:e.target.value})}/>
             </div>
-            <Textarea th={th} label={t("legNotes")} value={leg.notes} onChange={e=>updateLeg(leg.id,{notes:e.target.value})}/>
+            <Textarea th={th} label={t("legNotes")} className="min-h-16" value={leg.notes} onChange={e=>updateLeg(leg.id,{notes:e.target.value})}/>
           </div>)}
         </div>
       </Card>
