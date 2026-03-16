@@ -1,5 +1,6 @@
 // Universal Worker storage engine for read/write (讀寫) operations.
 // Supports:
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
 // 1) Dedicated Web Worker message API (in-memory Map)
 // 2) Service Worker message API (in-memory Map)
 // 3) Cloudflare Worker Fetch API with optional KV persistence via env.AI_STORAGE
@@ -18,6 +19,13 @@ function jsonResponse(body, status) {
     headers: { 'content-type': 'application/json', ...CORS_HEADERS },
   });
 }
+=======
+// 1) Dedicated Web Worker message API
+// 2) Service Worker message API
+// 3) Fetch API (useful for Worker runtimes that require fetch handlers)
+
+const store = new Map();
+>>>>>>> main
 
 function ok(id, data) {
   return { id, ok: true, data };
@@ -31,6 +39,7 @@ function validateKey(key) {
   return typeof key === 'string' && key.length > 0;
 }
 
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
 function createMemoryAdapter(mapRef) {
   return {
     async set(key, value) {
@@ -132,11 +141,15 @@ function pickStorage(env) {
 }
 
 async function executeAction(payload, storage) {
+=======
+function executeAction(payload) {
+>>>>>>> main
   const { id, action, key, value, entries } = payload ?? {};
 
   switch (action) {
     case 'set': {
       if (!validateKey(key)) throw new Error('Invalid key');
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
       return ok(id, await storage.set(key, value));
     }
     case 'get': {
@@ -165,15 +178,56 @@ async function executeAction(payload, storage) {
         if (!validateKey(entryKey)) throw new Error(`Invalid key in entries: ${entryKey}`);
       }
       return ok(id, await storage.bulkSet(entries));
+=======
+      store.set(key, value);
+      return ok(id, { key, value });
+    }
+    case 'get': {
+      if (!validateKey(key)) throw new Error('Invalid key');
+      return ok(id, { key, value: store.get(key), exists: store.has(key) });
+    }
+    case 'delete': {
+      if (!validateKey(key)) throw new Error('Invalid key');
+      const deleted = store.delete(key);
+      return ok(id, { key, deleted });
+    }
+    case 'has': {
+      if (!validateKey(key)) throw new Error('Invalid key');
+      return ok(id, { key, exists: store.has(key) });
+    }
+    case 'keys':
+      return ok(id, { keys: [...store.keys()] });
+    case 'values':
+      return ok(id, { values: [...store.values()] });
+    case 'entries':
+      return ok(id, { entries: [...store.entries()] });
+    case 'clear': {
+      store.clear();
+      return ok(id, { cleared: true });
+    }
+    case 'bulkSet': {
+      if (!Array.isArray(entries)) throw new Error('entries must be an array');
+      for (const [entryKey, entryValue] of entries) {
+        if (!validateKey(entryKey)) throw new Error(`Invalid key in entries: ${entryKey}`);
+        store.set(entryKey, entryValue);
+      }
+      return ok(id, { count: entries.length });
+>>>>>>> main
     }
     default:
       throw new Error(`Unsupported action: ${String(action)}`);
   }
 }
 
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
 async function toResult(payload, storage) {
   try {
     return await executeAction(payload, storage);
+=======
+function toResult(payload) {
+  try {
+    return executeAction(payload);
+>>>>>>> main
   } catch (error) {
     const id = payload?.id;
     return fail(id, error instanceof Error ? error.message : 'Unknown worker error');
@@ -181,15 +235,25 @@ async function toResult(payload, storage) {
 }
 
 function postMessageResponse(event, responsePayload) {
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
+=======
+  // Service worker message events should reply through event.source when possible.
+>>>>>>> main
   if (event?.source && typeof event.source.postMessage === 'function') {
     event.source.postMessage(responsePayload);
     return;
   }
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
+=======
+
+  // Dedicated worker fallback.
+>>>>>>> main
   if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
     self.postMessage(responsePayload);
   }
 }
 
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
 const localStorageAdapter = createMemoryAdapter(memoryStore);
 
 self.addEventListener('message', async (event) => {
@@ -204,12 +268,29 @@ async function handleFetch(request, env) {
 
   if (request.method !== 'POST') {
     return jsonResponse({ ok: false, error: 'Use POST with JSON body: { id, action, key?, value?, entries? }' }, 405);
+=======
+self.addEventListener('message', (event) => {
+  const responsePayload = toResult(event.data);
+  postMessageResponse(event, responsePayload);
+});
+
+async function handleFetch(request) {
+  if (request.method !== 'POST') {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: 'Use POST with JSON body: { id, action, key?, value?, entries? }',
+      }),
+      { status: 405, headers: { 'content-type': 'application/json' } }
+    );
+>>>>>>> main
   }
 
   let payload;
   try {
     payload = await request.json();
   } catch {
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
     return jsonResponse({ ok: false, error: 'Invalid JSON body' }, 400);
   }
 
@@ -227,3 +308,23 @@ export default {
     return handleFetch(request, env);
   },
 };
+=======
+    return new Response(JSON.stringify({ ok: false, error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const responsePayload = toResult(payload);
+  return new Response(JSON.stringify(responsePayload), {
+    status: responsePayload.ok ? 200 : 400,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+// Register fetch handler so Worker runtimes (e.g. AI worker style runtimes)
+// do not fail with "No event handlers were registered".
+self.addEventListener('fetch', (event) => {
+  event.respondWith(handleFetch(event.request));
+});
+>>>>>>> main

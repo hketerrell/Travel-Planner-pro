@@ -67,6 +67,7 @@ Then commit and push.
   - Confirm at least one watched path changed.
 - **Need deploy every push regardless of file path**
   - Remove the `paths:` block from workflow trigger.
+<<<<<<< codex/create-javascript-data-storage-worker-1voigo
 
 
 ## 8) Enable persistent cross-device account data (required)
@@ -109,3 +110,5 @@ Run in browser console:
 localStorage.setItem('tp-cloud-worker-endpoint', 'https://YOUR-WORKER.workers.dev');
 location.reload();
 ```
+=======
+>>>>>>> main
